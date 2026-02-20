@@ -1,6 +1,6 @@
 {
   "en": {
-    "title": "P2P Encrypted Chat",
+    "title": "Gr3njaEncryptChat",
     "enterName": "Please enter your name",
     "namePlaceholder": "Your name",
     "start": "Start",
@@ -41,7 +41,7 @@
     "dragDropFile": "Drag and drop files here"
   },
   "ja": {
-    "title": "P2P暗号化チャット",
+    "title": "Gr3njaEncryptChat",
     "enterName": "名前を入力してください",
     "namePlaceholder": "あなたの名前",
     "start": "開始",
@@ -204,4 +204,5 @@
     "fileTransferError": "Error en la transferencia de archivo",
     "dragDropFile": "Arrastra y suelta archivos aquí"
   }
+
 }
