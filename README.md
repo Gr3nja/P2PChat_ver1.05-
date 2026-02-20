@@ -1,4 +1,4 @@
-# P2PChat_ver1.00-
+# P2PChat_ver1.05-
 Peer.jsを使用した静止チャットwebサイトです。
 
 # アップデート-Update
@@ -14,6 +14,11 @@ Ver1.00β
 - コード全体の軽量化
 - translation.jsonの追加
 - 返信機能の追加
+
+Ver1.05β
+- ファイル送信機能とか
+- 画像送信機能
+- 見栄えをよくしたい
 
 Lightweight browser-based P2P encrypted chat demo.
 
@@ -66,3 +71,4 @@ Development notes:
 ライセンス
 
 個人用途のデモ。商用利用する場合は事前に確認してください。
+
