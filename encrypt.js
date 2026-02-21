@@ -1,18 +1,19 @@
 // 暗号化・復号化ユーティリティ関数
 
-// X25519鍵ペアの生成
+// ECDH (P-256) 鍵ペアの生成
+// ※ X25519はブラウザのSubtleCrypto未サポートのためP-256を使用（セキュリティ強度は同等）
 const generateX25519KeyPair = async () => {
     try {
         return await window.crypto.subtle.generateKey(
             {
                 name: 'ECDH',
-                namedCurve: 'X25519',
+                namedCurve: 'P-256',
             },
             true,
             ['deriveKey']
         );
     } catch (e) {
-        console.error('Failed to generate X25519 key pair:', e);
+        console.error('Failed to generate key pair:', e);
         return null;
     }
 };
@@ -50,7 +51,7 @@ const importPublicKey = async (base64) => {
     return await window.crypto.subtle.importKey(
         'raw',
         base64ToArrayBuffer(base64),
-        { name: 'ECDH', namedCurve: 'X25519' },
+        { name: 'ECDH', namedCurve: 'P-256' },
         true,
         []
     );
