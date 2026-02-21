@@ -1,5 +1,61 @@
 // 暗号化・復号化ユーティリティ関数
 
+// X25519鍵ペアの生成
+const generateX25519KeyPair = async () => {
+    try {
+        return await window.crypto.subtle.generateKey(
+            {
+                name: 'ECDH',
+                namedCurve: 'X25519',
+            },
+            true,
+            ['deriveKey']
+        );
+    } catch (e) {
+        console.error('Failed to generate X25519 key pair:', e);
+        return null;
+    }
+};
+
+// X25519で共有AESキーを導出
+const deriveSharedKey = async (privateKey, publicKey) => {
+    try {
+        return await window.crypto.subtle.deriveKey(
+            {
+                name: 'ECDH',
+                public: publicKey,
+            },
+            privateKey,
+            {
+                name: 'AES-GCM',
+                length: 256,
+            },
+            true,
+            ['encrypt', 'decrypt']
+        );
+    } catch (e) {
+        console.error('Failed to derive shared key:', e);
+        return null;
+    }
+};
+
+// X25519公開鍵をBase64にエクスポート
+const exportPublicKey = async (keyPair) => {
+    const exported = await window.crypto.subtle.exportKey('raw', keyPair.publicKey);
+    return arrayBufferToBase64(exported);
+};
+
+// Base64からX25519公開鍵をインポート
+const importPublicKey = async (base64) => {
+    return await window.crypto.subtle.importKey(
+        'raw',
+        base64ToArrayBuffer(base64),
+        { name: 'ECDH', namedCurve: 'X25519' },
+        true,
+        []
+    );
+};
+
 // ArrayBufferをBase64に変換
 const arrayBufferToBase64 = (buffer) => {
     const bytes = new Uint8Array(buffer);
@@ -20,23 +76,6 @@ const base64ToArrayBuffer = (base64) => {
     return bytes.buffer;
 };
 
-// 暗号化キーの生成
-const generateKey = async () => {
-    try {
-        return await window.crypto.subtle.generateKey(
-            {
-                name: 'AES-GCM',
-                length: 256,
-            },
-            true,
-            ['encrypt', 'decrypt']
-        );
-    } catch (e) {
-        console.error('Failed to generate key:', e);
-        return null;
-    }
-};
-
 // メッセージの暗号化
 const encryptMessage = async (text, cryptoKey) => {
     if (!cryptoKey) {
@@ -47,10 +86,7 @@ const encryptMessage = async (text, cryptoKey) => {
     const data = encoder.encode(text);
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
     const encrypted = await window.crypto.subtle.encrypt(
-        {
-            name: 'AES-GCM',
-            iv: iv,
-        },
+        { name: 'AES-GCM', iv },
         cryptoKey,
         data
     );
@@ -64,10 +100,7 @@ const encryptMessage = async (text, cryptoKey) => {
 const decryptMessage = async ({ iv, encrypted }, cryptoKey) => {
     try {
         const decrypted = await window.crypto.subtle.decrypt(
-            {
-                name: 'AES-GCM',
-                iv: base64ToArrayBuffer(iv),
-            },
+            { name: 'AES-GCM', iv: base64ToArrayBuffer(iv) },
             cryptoKey,
             base64ToArrayBuffer(encrypted)
         );
@@ -77,12 +110,6 @@ const decryptMessage = async ({ iv, encrypted }, cryptoKey) => {
         console.error('Failed to decrypt message:', e);
         return 'Decryption Error';
     }
-};
-
-// キーを ArrayBuffer に変換して送信形式で出力
-const exportKey = async (key) => {
-    const exported = await window.crypto.subtle.exportKey('raw', key);
-    return arrayBufferToBase64(exported);
 };
 
 // Base64をArrayBufferに変換（ファイル用）
@@ -117,10 +144,7 @@ const encryptFile = async (fileData, cryptoKey) => {
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
     const buffer = base64ToBufferForFile(fileData);
     const encrypted = await window.crypto.subtle.encrypt(
-        {
-            name: 'AES-GCM',
-            iv: iv,
-        },
+        { name: 'AES-GCM', iv },
         cryptoKey,
         buffer
     );
@@ -134,10 +158,7 @@ const encryptFile = async (fileData, cryptoKey) => {
 const decryptFile = async ({ iv, encrypted }, cryptoKey) => {
     try {
         const decrypted = await window.crypto.subtle.decrypt(
-            {
-                name: 'AES-GCM',
-                iv: base64ToArrayBuffer(iv),
-            },
+            { name: 'AES-GCM', iv: base64ToArrayBuffer(iv) },
             cryptoKey,
             base64ToArrayBuffer(encrypted)
         );

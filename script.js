@@ -19,6 +19,8 @@ function App() {
   const peerInstance = useRef(null);
   const connRef = useRef(null);
   const cryptoKey = useRef(null);
+  // X25519鍵ペア保持用
+  const myKeyPair = useRef(null);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const inputRef = useRef(null);
@@ -40,7 +42,7 @@ function App() {
     setTimeout(() => setNotification(''), 3000);
   };
 
-  // ラッパー：暗号化 (encrypt.jsの関数を使用、cryptoKey.currentを自動的に渡す)
+  // ラッパー：暗号化
   const encryptMessageLocal = async (text) => {
     if (!cryptoKey.current) {
       showNotification('noConnection');
@@ -49,7 +51,7 @@ function App() {
     return encryptMessage(text, cryptoKey.current);
   };
 
-  // ラッパー：復号化 (encrypt.jsの関数を使用、cryptoKey.currentを自動的に渡す)
+  // ラッパー：復号化
   const decryptMessageLocal = async (data) => {
     if (!cryptoKey.current) {
       showNotification('noConnection');
@@ -58,7 +60,7 @@ function App() {
     return decryptMessage(data, cryptoKey.current);
   };
 
-  // ラッパー：ファイル暗号化 (encrypt.jsの関数を使用、cryptoKey.currentを自動的に渡す)
+  // ラッパー：ファイル暗号化
   const encryptFileLocal = async (fileData) => {
     if (!cryptoKey.current) {
       showNotification('noConnection');
@@ -67,28 +69,13 @@ function App() {
     return encryptFile(fileData, cryptoKey.current);
   };
 
-  // ラッパー：ファイル復号化 (encrypt.jsの関数を使用、cryptoKey.currentを自動的に渡す)
+  // ラッパー：ファイル復号化
   const decryptFileLocal = async (data) => {
     if (!cryptoKey.current) {
       showNotification('noConnection');
       return null;
     }
     return decryptFile(data, cryptoKey.current);
-  };
-
-  // ラッパー：キー生成 (encrypt.jsの関数を使用)
-  const generateKeyLocal = async () => {
-    try {
-      return await generateKey();
-    } catch (e) {
-      showNotification('keyGenerationFailed');
-      return null;
-    }
-  };
-
-  // ラッパー：キーをBase64にエクスポート (encrypt.jsの関数を使用)
-  const exportKeyLocal = async (key) => {
-    return exportKey(key);
   };
 
   // タイムスタンプのフォーマット
@@ -107,15 +94,9 @@ function App() {
   const handleTyping = () => {
     if (connRef.current) {
       connRef.current.send({ type: 'typing', user: userName });
-
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
-        if (connRef.current) {
-          connRef.current.send({ type: 'stop-typing' });
-        }
+        if (connRef.current) connRef.current.send({ type: 'stop-typing' });
       }, 2000);
     }
   };
@@ -133,29 +114,17 @@ function App() {
     }
   };
 
-  // ダブルクリック作成のダミーボタンを使用
   const handleFileInputChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      handleFileSelect(e.target.files[0]);
-    }
+    if (e.target.files && e.target.files[0]) handleFileSelect(e.target.files[0]);
   };
 
   // ドラッグアンドドロップ処理
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.currentTarget.classList.add('drag-over');
-  };
-
-  const handleDragLeave = (e) => {
-    e.currentTarget.classList.remove('drag-over');
-  };
-
+  const handleDragOver = (e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); };
+  const handleDragLeave = (e) => { e.currentTarget.classList.remove('drag-over'); };
   const handleDrop = (e) => {
     e.preventDefault();
     e.currentTarget.classList.remove('drag-over');
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelect(e.dataTransfer.files[0]);
-    }
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFileSelect(e.dataTransfer.files[0]);
   };
 
   // ファイル送信処理
@@ -164,22 +133,18 @@ function App() {
       showNotification('noConnection');
       return;
     }
-
     try {
       const base64Data = await fileToBase64(selectedFile);
       const encrypted = await encryptFileLocal(base64Data);
-
       if (!encrypted) return;
 
-      const fileWrapper = {
+      connRef.current.send({
         type: 'file-data',
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
         mimeType: selectedFile.type,
         ...encrypted,
-      };
-
-      connRef.current.send(fileWrapper);
+      });
       setMessages(prev => [...prev, {
         sender: 'local',
         text: `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(2)} KB)`,
@@ -187,7 +152,6 @@ function App() {
         isFile: true,
         fileName: selectedFile.name,
       }]);
-
       setSelectedFile(null);
       showNotification('fileSent');
     } catch (err) {
@@ -201,10 +165,8 @@ function App() {
     try {
       const decrypted = await decryptFileLocal(data);
       if (!decrypted) return;
-
       const base64String = arrayBufferToBase64(decrypted);
       const dataUrl = `data:${data.mimeType};base64,${base64String}`;
-
       setMessages(prev => [...prev, {
         sender: 'remote',
         text: `${data.fileName} (${(data.fileSize / 1024).toFixed(2)} KB)`,
@@ -214,41 +176,71 @@ function App() {
         fileData: dataUrl,
         mimeType: data.mimeType,
       }]);
-
       showNotification('fileReceived');
     } catch (err) {
       console.error('File receive error:', err);
       showNotification('fileTransferError');
     }
   };
+
+  // -------------------------------------------------------
+  // X25519鍵交換フロー
+  //
+  // 【接続を開始した側 (initiator)】
+  //   1. 接続確立後、自分の公開鍵を { type: 'pubkey', key: base64 } で送信
+  //
+  // 【接続を受けた側 (receiver)】
+  //   2. pubkeyを受け取ったら、自分の公開鍵を返送
+  //      同時に相手の公開鍵からderiveSharedKeyして cryptoKey.current にセット
+  //
+  // 【initiator】
+  //   3. 相手の公開鍵を受け取ってderiveSharedKey → cryptoKey.current にセット
+  //      → 両者で同じ共有AESキーが完成！
+  // -------------------------------------------------------
   const handleData = async (data) => {
-    if (data.type === 'key') {
+    if (data.type === 'pubkey') {
       try {
-        cryptoKey.current = await window.crypto.subtle.importKey(
-          'raw',
-          base64ToArrayBuffer(data.key),
-          { name: 'AES-GCM' },
-          false,
-          ['encrypt', 'decrypt']
-        );
+        // 相手の公開鍵をインポート
+        const remotePubKey = await importPublicKey(data.key);
+
+        // 共有キーを導出
+        cryptoKey.current = await deriveSharedKey(myKeyPair.current.privateKey, remotePubKey);
+
+        // receiverの場合：自分の公開鍵をまだ送っていなければ返送
+        if (data.needsReply) {
+          const myPubKeyBase64 = await exportPublicKey(myKeyPair.current);
+          connRef.current.send({ type: 'pubkey', key: myPubKeyBase64, needsReply: false });
+        }
+
         setMessages(prev => [...prev, { sender: 'system', text: t('keyReceived'), timestamp: formatTimestamp() }]);
+
+        // ユーザー名を送信
+        if (userName) {
+          connRef.current.send({ type: 'user-info', name: userName });
+        }
+
       } catch (e) {
+        console.error('Key exchange failed:', e);
         showNotification('keyImportFailed');
       }
+
     } else if (data.type === 'message') {
       const decryptedText = await decryptMessageLocal(data);
-      // preserve reply metadata if present
       const incoming = { sender: 'remote', text: decryptedText, timestamp: formatTimestamp() };
       if (data.replyTo) incoming.replyTo = data.replyTo;
       setMessages(prev => [...prev, incoming]);
       showNotification('newMessage');
+
     } else if (data.type === 'typing') {
       setRemoteName(data.user || t('remoteUser'));
       setIsTyping(true);
+
     } else if (data.type === 'stop-typing') {
       setIsTyping(false);
+
     } else if (data.type === 'user-info') {
       setRemoteName(data.name);
+
     } else if (data.type === 'file-data') {
       receiveFile(data);
     }
@@ -260,7 +252,6 @@ function App() {
   }, [messages]);
 
   useEffect(() => {
-    // Generate a 6-character alphanumeric ID
     const generateShortId = () => {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
       let id = '';
@@ -278,76 +269,63 @@ function App() {
             ]
           }
         });
-
-        const onOpen = (openId) => {
-          peer.off('open', onOpen);
-          peer.off('error', onError);
-          resolve({ peer, id: openId });
-        };
-
-        const onError = (err) => {
-          peer.off('open', onOpen);
-          peer.off('error', onError);
-          // destroy and reject so caller can retry with a new id
-          try { peer.destroy(); } catch (e) { }
-          reject(err);
-        };
-
+        const onOpen = (openId) => { peer.off('open', onOpen); peer.off('error', onError); resolve({ peer, id: openId }); };
+        const onError = (err) => { peer.off('open', onOpen); peer.off('error', onError); try { peer.destroy(); } catch (e) { } reject(err); };
         peer.on('open', onOpen);
         peer.on('error', onError);
       });
     };
 
     const tryCreatePeer = async (retries = 5) => {
+      // X25519鍵ペアを事前生成
+      myKeyPair.current = await generateX25519KeyPair();
+
       for (let i = 0; i < retries; i++) {
         const id = generateShortId();
         try {
           const { peer, id: openId } = await createPeerWithId(id);
           peerInstance.current = peer;
-          // set peer id and create crypto key
           setPeerId(openId);
           setConnectionStatus('peerIdGenerated');
-          cryptoKey.current = await generateKeyLocal();
 
-          // attach handlers (connection & error)
+          // 接続を受けた側のハンドラ
           peer.on('connection', (conn) => {
             connRef.current = conn;
             setConnectionStatus('connected');
             showNotification('connectionEstablished');
+
             conn.on('data', handleData);
             conn.on('close', () => {
               setConnectionStatus('disconnected');
               setMessages(prev => [...prev, { sender: 'system', text: t('connectionClosed'), timestamp: formatTimestamp() }]);
               connRef.current = null;
+              cryptoKey.current = null;
               showNotification('connectionClosed');
             });
           });
 
           peer.on('error', (err) => {
             setMessages(prev => [...prev, { sender: 'system', text: `${t('error')}: ${err.message}`, timestamp: formatTimestamp() }]);
-            setConnectionStatus(`error`);
+            setConnectionStatus('error');
             showNotification(`${t('error')}: ${err.message}`);
           });
 
           return;
         } catch (err) {
-          // If last attempt, surface error to UI
           if (i === retries - 1) {
             console.error('Failed to create peer after retries', err);
-            setMessages(prev => [...prev, { sender: 'system', text: `${t('error')}: ${err.message || err}`, timestamp: formatTimestamp() }]);
             setConnectionStatus('error');
             showNotification('connectionError');
           }
-          // otherwise loop to try another id
         }
       }
     };
 
     tryCreatePeer();
-
     return () => { try { peerInstance.current?.destroy(); } catch (e) { } };
   }, []);
 
+  // 接続を開始する側：公開鍵交換を起動
   const connectToPeer = async () => {
     if (!remotePeerId) {
       showNotification('enterPeerIdPrompt');
@@ -359,29 +337,27 @@ function App() {
 
     conn.on('open', async () => {
       setConnectionStatus('connected');
-      const keyData = await exportKeyLocal(cryptoKey.current);
-      conn.send({ type: 'key', key: keyData });
 
-      if (userName) {
-        conn.send({ type: 'user-info', name: userName });
-      }
+      // 自分の公開鍵を送信（needsReply: true で相手にも返送を促す）
+      const myPubKeyBase64 = await exportPublicKey(myKeyPair.current);
+      conn.send({ type: 'pubkey', key: myPubKeyBase64, needsReply: true });
 
       setMessages(prev => [...prev, { sender: 'system', text: t('keySent'), timestamp: formatTimestamp() }]);
       showNotification('connectionEstablished');
 
       conn.on('data', handleData);
-
       conn.on('close', () => {
         setConnectionStatus('disconnected');
         setMessages(prev => [...prev, { sender: 'system', text: t('connectionClosed'), timestamp: formatTimestamp() }]);
         connRef.current = null;
+        cryptoKey.current = null;
         showNotification('connectionClosed');
       });
     });
 
     conn.on('error', (err) => {
       setMessages(prev => [...prev, { sender: 'system', text: `${t('connectionError')}: ${err.message}`, timestamp: formatTimestamp() }]);
-      setConnectionStatus(`error`);
+      setConnectionStatus('error');
       showNotification(`${t('connectionError')}: ${err.message}`);
     });
   };
@@ -391,7 +367,6 @@ function App() {
       const encryptedMessage = await encryptMessageLocal(message);
       if (!encryptedMessage) return;
 
-      // attach reply metadata (unencrypted wrapper) if replying
       const wrapper = { type: 'message', ...encryptedMessage };
       if (replyTo) wrapper.replyTo = { text: replyTo.text, sender: replyTo.sender };
 
@@ -409,37 +384,22 @@ function App() {
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      sendMessage();
-    }
-  };
-
-  const handleMessageChange = (e) => {
-    setMessage(e.target.value);
-    handleTyping();
-  };
-
-  const copyPeerId = () => {
-    navigator.clipboard.writeText(peerId);
-    showNotification('copyPeerId');
-  };
-
+  const handleKeyPress = (e) => { if (e.key === 'Enter') sendMessage(); };
+  const handleMessageChange = (e) => { setMessage(e.target.value); handleTyping(); };
+  const copyPeerId = () => { navigator.clipboard.writeText(peerId); showNotification('copyPeerId'); };
   const disconnect = () => {
     if (connRef.current) {
       connRef.current.close();
       connRef.current = null;
+      cryptoKey.current = null;
       setConnectionStatus('disconnected');
       showNotification('connectionClosed');
     }
   };
 
   const handleNameSubmit = () => {
-    if (userName.trim()) {
-      setIsNameSet(true);
-    } else {
-      showNotification('enterName');
-    }
+    if (userName.trim()) setIsNameSet(true);
+    else showNotification('enterName');
   };
 
   // 名前入力画面
@@ -486,14 +446,12 @@ function App() {
   return (
     <div className="h-screen overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col pb-[44px]">
       <div className="max-w-4xl mx-auto w-full p-4 sm:p-6 overflow-y-auto flex-1">
-        {/* 通知 */}
         {notification && (
           <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg animate-pulse">
             {notification}
           </div>
         )}
 
-        {/* ヘッダー（接続前） */}
         {connectionStatus !== 'connected' && (
           <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
             <div className="flex justify-between items-center mb-4">
@@ -501,7 +459,6 @@ function App() {
                 {t('title')}
               </h1>
             </div>
-
             <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">{t('yourPeerId')}</label>
@@ -522,7 +479,6 @@ function App() {
                 </div>
               </div>
             </div>
-
             <div className={`mt-4 p-3 rounded-lg ${connectionStatus === 'connected' ? 'bg-green-100 text-green-800' : connectionStatus.includes('error') ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'} connection-status`}>
               <div className="flex items-center">
                 <div className={`w-3 h-3 rounded-full mr-2 ${connectionStatus === 'connected' ? 'bg-green-500' : connectionStatus.includes('error') ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
@@ -532,7 +488,6 @@ function App() {
           </div>
         )}
 
-        {/* 接続セクション（接続前） */}
         {connectionStatus !== 'connected' && (
           <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
             <h2 className="text-xl font-semibold mb-4">{t('connectToPeer')}</h2>
@@ -555,22 +510,17 @@ function App() {
           </div>
         )}
 
-        {/* チャットセクション（接続後） */}
         {connectionStatus === 'connected' && (
           <div className="bg-white rounded-lg shadow-xl p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">
                 {t('chat')} {remoteName && `with ${remoteName}`}
               </h2>
-              <button
-                onClick={disconnect}
-                className="text-red-500 hover:text-red-700 transition-colors"
-              >
+              <button onClick={disconnect} className="text-red-500 hover:text-red-700 transition-colors">
                 {t('disconnect')}
               </button>
             </div>
 
-            {/* メッセージエリア */}
             <div
               className="h-[60vh] overflow-y-auto border-2 border-dashed p-4 mb-4 rounded-lg bg-gray-50"
               onDragOver={handleDragOver}
@@ -582,27 +532,15 @@ function App() {
                   key={index}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    // set reply only for non-system messages
                     if (msg.sender !== 'system') {
                       setReplyTo({ text: msg.text, sender: msg.sender, index });
-                      // focus input for convenience
                       setTimeout(() => inputRef.current?.focus(), 0);
                     }
                   }}
-                  className={`mb-3 message-animation ${msg.sender === 'local' ? 'text-left' :
-                    msg.sender === 'system' ? 'text-center' : 'text-right'
-                    }`}
+                  className={`mb-3 message-animation ${msg.sender === 'local' ? 'text-left' : msg.sender === 'system' ? 'text-center' : 'text-right'}`}
                 >
-                  <div
-                    className={`inline-block p-3 rounded-lg max-w-xs sm:max-w-md ${msg.sender === 'local'
-                      ? 'bg-blue-500 text-white'
-                      : msg.sender === 'system'
-                        ? 'bg-gray-200 text-gray-800'
-                        : 'bg-gray-100 text-gray-800'
-                      } shadow-md`}
-                  >
+                  <div className={`inline-block p-3 rounded-lg max-w-xs sm:max-w-md ${msg.sender === 'local' ? 'bg-blue-500 text-white' : msg.sender === 'system' ? 'bg-gray-200 text-gray-800' : 'bg-gray-100 text-gray-800'} shadow-md`}>
                     <div className="text-xs opacity-70 mb-1">{msg.timestamp}</div>
-                    {/* show replied-to preview if present */}
                     {msg.replyTo && (
                       <div className="mb-2 p-2 rounded bg-gray-50 text-sm text-gray-600 border-l-2 border-gray-200">
                         <div className="text-xs opacity-60">{msg.replyTo.sender === 'local' ? 'You' : msg.replyTo.sender}</div>
@@ -612,30 +550,13 @@ function App() {
                     {msg.isFile ? (
                       msg.mimeType && msg.mimeType.startsWith('image/') ? (
                         <div className="flex flex-col gap-2">
-                          <img
-                            src={msg.fileData}
-                            alt={msg.fileName}
-                            className="max-w-xs sm:max-w-sm rounded"
-                            style={{ maxHeight: '300px', objectFit: 'contain' }}
-                          />
+                          <img src={msg.fileData} alt={msg.fileName} className="max-w-xs sm:max-w-sm rounded" style={{ maxHeight: '300px', objectFit: 'contain' }} />
                           {msg.fileData && (
-                            <a
-                              href={msg.fileData}
-                              download={msg.fileName}
-                              className="text-xs text-blue-300 hover:text-blue-100 underline"
-                            >
-                              {msg.fileName}
-                            </a>
+                            <a href={msg.fileData} download={msg.fileName} className="text-xs text-blue-300 hover:text-blue-100 underline">{msg.fileName}</a>
                           )}
                         </div>
                       ) : msg.fileData ? (
-                        <a
-                          href={msg.fileData}
-                          download={msg.fileName}
-                          className="block p-2 bg-white rounded hover:bg-gray-100 text-blue-600 underline break-words"
-                        >
-                          {msg.text}
-                        </a>
+                        <a href={msg.fileData} download={msg.fileName} className="block p-2 bg-white rounded hover:bg-gray-100 text-blue-600 underline break-words">{msg.text}</a>
                       ) : (
                         <div className="break-words">{msg.text}</div>
                       )
@@ -654,11 +575,9 @@ function App() {
                   </div>
                 </div>
               )}
-
               <div ref={messagesEndRef} />
             </div>
 
-            {/* 入力エリア */}
             <div className="mb-2">
               {replyTo && (
                 <div className="mb-2 p-2 bg-yellow-50 border-l-4 border-yellow-300 rounded flex items-start justify-between">
@@ -688,12 +607,7 @@ function App() {
                 >
                   ➤
                 </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  onChange={handleFileInputChange}
-                  style={{ display: 'none' }}
-                />
+                <input ref={fileInputRef} type="file" onChange={handleFileInputChange} style={{ display: 'none' }} />
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="bg-green-500 text-white w-12 h-12 rounded-full hover:bg-green-600 transition-colors flex items-center justify-center flex-shrink-0"
@@ -709,18 +623,8 @@ function App() {
                 <div className="mt-2 p-2 bg-gray-100 rounded text-sm text-gray-700 flex items-center justify-between">
                   <span>{selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)</span>
                   <div className="flex gap-2">
-                    <button
-                      onClick={sendFile}
-                      className="text-green-600 hover:text-green-800 font-semibold transition-colors"
-                    >
-                      ✓ 送信
-                    </button>
-                    <button
-                      onClick={() => setSelectedFile(null)}
-                      className="text-red-600 hover:text-red-800 font-semibold transition-colors"
-                    >
-                      ✕ キャンセル
-                    </button>
+                    <button onClick={sendFile} className="text-green-600 hover:text-green-800 font-semibold transition-colors">✓ 送信</button>
+                    <button onClick={() => setSelectedFile(null)} className="text-red-600 hover:text-red-800 font-semibold transition-colors">✕ キャンセル</button>
                   </div>
                 </div>
               )}
@@ -732,7 +636,6 @@ function App() {
   );
 }
 
-
 const loadTranslations = async () => {
   try {
     const res = await fetch('translations.json');
@@ -740,7 +643,6 @@ const loadTranslations = async () => {
     translations = await res.json();
   } catch (e) {
     console.error('Failed to load translations.json', e);
-
     translations = { en: { start: 'Start', enterName: 'Please enter your name', namePlaceholder: 'Your name', language: 'Language' } };
   }
 };
