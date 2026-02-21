@@ -40,16 +40,16 @@ const deriveSharedKey = async (privateKey, publicKey) => {
     }
 };
 
-// X25519公開鍵をBase64にエクスポート
+// P-256公開鍵をBase64にエクスポート（SPKI形式）
 const exportPublicKey = async (keyPair) => {
-    const exported = await window.crypto.subtle.exportKey('raw', keyPair.publicKey);
+    const exported = await window.crypto.subtle.exportKey('spki', keyPair.publicKey);
     return arrayBufferToBase64(exported);
 };
 
-// Base64からX25519公開鍵をインポート
+// Base64からP-256公開鍵をインポート（SPKI形式）
 const importPublicKey = async (base64) => {
     return await window.crypto.subtle.importKey(
-        'raw',
+        'spki',
         base64ToArrayBuffer(base64),
         { name: 'ECDH', namedCurve: 'P-256' },
         true,
