@@ -31,7 +31,7 @@ const deriveSharedKey = async (privateKey, publicKey) => {
                 name: 'AES-GCM',
                 length: 256,
             },
-            true,
+            false,
             ['encrypt', 'decrypt']
         );
     } catch (e) {

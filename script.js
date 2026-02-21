@@ -203,16 +203,24 @@ function App() {
         // 相手の公開鍵をインポート
         const remotePubKey = await importPublicKey(data.key);
 
-        // 共有キーを導出
-        cryptoKey.current = await deriveSharedKey(myKeyPair.current.privateKey, remotePubKey);
-
-        // receiverの場合：自分の公開鍵をまだ送っていなければ返送
+        // receiverの場合：先に自分の公開鍵を返送してからderiveSharedKey
         if (data.needsReply) {
           const myPubKeyBase64 = await exportPublicKey(myKeyPair.current);
           connRef.current.send({ type: 'pubkey', key: myPubKeyBase64, needsReply: false });
         }
 
+        // 共有キーを導出
+        cryptoKey.current = await deriveSharedKey(myKeyPair.current.privateKey, remotePubKey);
+
+        if (!cryptoKey.current) {
+          console.error('deriveSharedKey returned null');
+          showNotification('keyImportFailed');
+          return;
+        }
+
         setMessages(prev => [...prev, { sender: 'system', text: t('keyReceived'), timestamp: formatTimestamp() }]);
+        setConnectionStatus('connected');
+        showNotification('connectionEstablished');
 
         // ユーザー名を送信
         if (userName) {
@@ -291,8 +299,7 @@ function App() {
           // 接続を受けた側のハンドラ
           peer.on('connection', (conn) => {
             connRef.current = conn;
-            setConnectionStatus('connected');
-            showNotification('connectionEstablished');
+            setConnectionStatus('connecting');
 
             conn.on('data', handleData);
             conn.on('close', async () => {
