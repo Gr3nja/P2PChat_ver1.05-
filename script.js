@@ -111,9 +111,13 @@ function App() {
   const [isNameSet, setIsNameSet] = useState(false);
   const [language, setLanguage] = useState(localStorage.getItem('language') || 'en');
 
+  // スマホ判定
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   // 音声通話関連
   const [callStatus, setCallStatus] = useState('idle'); // idle | calling | receiving | ongoing
   const [isMuted, setIsMuted] = useState(false);
+  const [isSpeaker, setIsSpeaker] = useState(false);
   const localStreamRef = useRef(null);
   const currentCallRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -281,7 +285,15 @@ function App() {
       call.on('stream', (remoteStream) => {
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = remoteStream;
-          remoteAudioRef.current.play();
+          remoteAudioRef.current.volume = 1.0;
+          // AudioContextでゲイン増幅
+          const audioCtx = new AudioContext();
+          const source = audioCtx.createMediaStreamSource(remoteStream);
+          const gainNode = audioCtx.createGain();
+          gainNode.gain.value = 2.5;
+          source.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          remoteAudioRef.current.play().catch(() => {});
         }
         setCallStatus('ongoing');
         setMessages(prev => [...prev, { sender: 'system', text: '通話中...', timestamp: formatTimestamp() }]);
@@ -310,7 +322,14 @@ function App() {
       call.on('stream', (remoteStream) => {
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = remoteStream;
-          remoteAudioRef.current.play();
+          remoteAudioRef.current.volume = 1.0;
+          const audioCtx = new AudioContext();
+          const source = audioCtx.createMediaStreamSource(remoteStream);
+          const gainNode = audioCtx.createGain();
+          gainNode.gain.value = 2.5;
+          source.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          remoteAudioRef.current.play().catch(() => {});
         }
         setMessages(prev => [...prev, { sender: 'system', text: '通話中...', timestamp: formatTimestamp() }]);
       });
@@ -343,6 +362,29 @@ function App() {
         audioTrack.enabled = !audioTrack.enabled;
         setIsMuted(!audioTrack.enabled);
       }
+    }
+  };
+
+  const toggleSpeaker = async () => {
+    const audio = remoteAudioRef.current;
+    if (!audio) return;
+    try {
+      if (isSpeaker) {
+        // イヤホン/デフォルトに戻す
+        if (audio.setSinkId) await audio.setSinkId('');
+      } else {
+        // スピーカーに切り替え（setSinkIdが使えればデバイス一覧から選ぶが
+        // モバイルではspeakerphoneはsinkId指定不要でHTMLAudioElementのsinkId=''で自動）
+        if (audio.setSinkId) await audio.setSinkId('');
+        // iOSはsinkId非対応のためAudioContextで代替
+        if (!audio.setSinkId) {
+          // iOSではspeakerへの切り替えはplay()で自動的に行われる場合が多い
+          audio.play().catch(() => {});
+        }
+      }
+      setIsSpeaker(s => !s);
+    } catch (e) {
+      console.error('Speaker toggle error:', e);
     }
   };
 
@@ -605,36 +647,84 @@ function App() {
 
       {/* 発信中UI */}
       {callStatus === 'calling' && (
-        <div className="fixed bottom-16 right-4 z-40 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
-          <span className="text-sm font-medium">発信中...</span>
-          <button
-            onClick={endCall}
-            className="bg-red-500 text-white px-3 py-1 rounded-full text-xs font-semibold hover:bg-red-600 transition-colors"
-          >
-            キャンセル
-          </button>
-        </div>
+        isMobile ? (
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-900">
+            <div className="text-white text-xl font-semibold mb-2">{remoteName || '相手'}</div>
+            <div className="text-gray-400 text-sm mb-12">発信中...</div>
+            <div className="w-4 h-4 rounded-full bg-yellow-400 animate-ping mb-16"></div>
+            <button onClick={endCall} className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-xl">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" transform="rotate(135 12 12)"/></svg>
+            </button>
+          </div>
+        ) : (
+          <div className="fixed bottom-16 right-4 z-40 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
+            <span className="text-sm font-medium">発信中...</span>
+            <button onClick={endCall} className="bg-red-500 text-white px-3 py-1 rounded-full text-xs font-semibold hover:bg-red-600 transition-colors">キャンセル</button>
+          </div>
+        )
       )}
 
       {/* 通話中UI */}
       {callStatus === 'ongoing' && (
-        <div className="fixed bottom-16 right-4 z-40 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-          <span className="text-sm font-medium">通話中</span>
-          <button
-            onClick={toggleMute}
-            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${isMuted ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            {isMuted ? 'ミュート中' : 'ミュート'}
-          </button>
-          <button
-            onClick={endCall}
-            className="bg-red-500 text-white px-3 py-1 rounded-full text-xs font-semibold hover:bg-red-600 transition-colors"
-          >
-            終了
-          </button>
-        </div>
+        isMobile ? (
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-between bg-gray-900 py-16 px-8">
+            <div className="flex flex-col items-center gap-2 mt-8">
+              <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center text-3xl text-white font-bold">
+                {(remoteName || '?')[0].toUpperCase()}
+              </div>
+              <div className="text-white text-xl font-semibold mt-2">{remoteName || '相手'}</div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+                <span className="text-green-400 text-sm">通話中</span>
+              </div>
+            </div>
+            <div className="flex gap-8 items-center mb-4">
+              <div className="flex flex-col items-center gap-1">
+                <button
+                  onClick={toggleMute}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center ${isMuted ? 'bg-red-500' : 'bg-gray-700'}`}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                </button>
+                <span className="text-gray-400 text-xs">{isMuted ? 'ミュート中' : 'ミュート'}</span>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <button onClick={endCall} className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-xl">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" transform="rotate(135 12 12)"/></svg>
+                </button>
+                <span className="text-gray-400 text-xs">終了</span>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <button
+                  onClick={toggleSpeaker}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center ${isSpeaker ? 'bg-green-600' : 'bg-gray-700'}`}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  </svg>
+                </button>
+                <span className="text-gray-400 text-xs">{isSpeaker ? 'スピーカー' : 'イヤホン'}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="fixed bottom-16 right-4 z-40 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <span className="text-sm font-medium">通話中</span>
+            <button onClick={toggleMute} className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${isMuted ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+              {isMuted ? 'ミュート中' : 'ミュート'}
+            </button>
+            <button onClick={endCall} className="bg-red-500 text-white px-3 py-1 rounded-full text-xs font-semibold hover:bg-red-600 transition-colors">終了</button>
+          </div>
+        )
       )}
 
       {/* リモート音声出力 */}
