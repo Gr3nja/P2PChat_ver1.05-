@@ -15,7 +15,8 @@ const isTextFile = (mimeType, fileName) => {
 const getTextFromDataUrl = (dataUrl) => {
   try {
     const base64 = dataUrl.split(',')[1];
-    return atob(base64);
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
   } catch { return null; }
 };
 
