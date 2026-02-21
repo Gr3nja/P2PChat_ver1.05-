@@ -2,11 +2,12 @@ const { useState, useEffect, useRef } = React;
 
 // テキスト系MIMEタイプかどうか判定
 const isTextFile = (mimeType, fileName) => {
-  if (!mimeType && !fileName) return false;
-  const textMimes = ['text/', 'application/json', 'application/xml', 'application/javascript', 'application/typescript'];
-  if (mimeType && textMimes.some(m => mimeType.startsWith(m))) return true;
-  const textExts = ['.txt', '.json', '.csv', '.md', '.js', '.ts', '.html', '.css', '.xml', '.log', '.yaml', '.yml'];
-  if (fileName && textExts.some(e => fileName.toLowerCase().endsWith(e))) return true;
+  if (mimeType && mimeType.startsWith('text/')) return true;
+  if (mimeType && ['application/json', 'application/xml', 'application/javascript', 'application/typescript'].includes(mimeType)) return true;
+  if (!mimeType && fileName) {
+    const textExts = ['.txt', '.json', '.csv', '.md', '.js', '.ts', '.html', '.css', '.xml', '.log', '.yaml', '.yml'];
+    if (textExts.some(e => fileName.toLowerCase().endsWith(e))) return true;
+  }
   return false;
 };
 
