@@ -2,12 +2,98 @@ const { useState, useEffect, useRef } = React;
 
 // テキスト系MIMEタイプかどうか判定
 const isTextFile = (mimeType, fileName) => {
-  if (mimeType && mimeType.startsWith('text/')) return true;
-  if (mimeType && ['application/json', 'application/xml', 'application/javascript', 'application/typescript'].includes(mimeType)) return true;
-  if (!mimeType && fileName) {
-    const textExts = ['.txt', '.json', '.csv', '.md', '.js', '.ts', '.html', '.css', '.xml', '.log', '.yaml', '.yml'];
-    if (textExts.some(e => fileName.toLowerCase().endsWith(e))) return true;
+  // 明らかなバイナリは除外
+  const binaryMimes = [
+    'application/octet-stream',
+    'application/zip', 'application/x-zip-compressed', 'application/x-rar-compressed',
+    'application/x-7z-compressed', 'application/x-tar', 'application/gzip',
+    'application/x-bzip2', 'application/x-xz', 'application/x-lzip',
+    'application/x-lzma', 'application/zstd', 'application/x-compress',
+    'application/pdf', 'application/msword', 'application/vnd.ms-excel',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/epub+zip',
+    'application/exe', 'application/x-msdownload', 'application/x-msdos-program',
+    'application/x-elf', 'application/x-mach-binary', 'application/x-sharedlib',
+    'application/x-executable', 'application/vnd.android.package-archive',
+    'application/java-archive', 'application/wasm',
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp',
+    'image/tiff', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/heic',
+    'image/heif', 'image/avif', 'image/jp2', 'image/jxl', 'image/x-xcf',
+    'image/vnd.adobe.photoshop',
+    'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/flac',
+    'audio/ogg', 'audio/aac', 'audio/x-m4a', 'audio/x-aiff', 'audio/x-ms-wma',
+    'audio/opus', 'audio/amr',
+    'video/mp4', 'video/x-msvideo', 'video/quicktime', 'video/x-matroska',
+    'video/webm', 'video/x-flv', 'video/mpeg', 'video/x-ms-wmv', 'video/3gpp',
+    'video/ogg', 'video/av1',
+    'font/ttf', 'font/otf', 'font/woff', 'font/woff2',
+    'application/x-font-ttf', 'application/x-font-otf',
+    'application/font-woff', 'application/font-woff2',
+    'application/x-sqlite3', 'application/vnd.ms-access', 'application/x-dbase',
+    'application/x-parquet', 'application/x-hdf', 'application/x-netcdf',
+    'application/x-iso9660-image', 'application/x-raw-disk-image',
+    'model/stl', 'model/obj', 'model/gltf-binary', 'application/x-fbx', 'application/x-blender',
+    'application/x-pkcs12', 'application/x-x509-ca-cert', 'application/x-pem-file',
+    'application/x-deb', 'application/x-rpm', 'application/vnd.snap',
+    'application/x-apple-diskimage', 'application/x-msmetafile',
+  ];
+  const binaryExts = [
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+    '.lz', '.lzma', '.zst', '.z', '.tgz', '.tbz2', '.txz',
+    '.cab', '.lha', '.lzh', '.ace', '.arj',
+    '.exe', '.dll', '.so', '.dylib', '.bin', '.dat',
+    '.elf', '.out', '.com', '.msi', '.apk', '.ipa',
+    '.jar', '.war', '.ear', '.dex',
+    '.pdf', '.doc', '.docx', '.odt', '.rtf',
+    '.xls', '.xlsx', '.ods', '.ppt', '.pptx', '.odp',
+    '.epub', '.mobi', '.azw', '.azw3', '.xps', '.oxps',
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.ico',
+    '.tiff', '.tif', '.heic', '.heif', '.avif', '.jp2', '.jxl',
+    '.psd', '.xcf', '.ai', '.eps', '.raw', '.cr2', '.cr3',
+    '.nef', '.arw', '.orf', '.rw2', '.dng',
+    '.mp3', '.wav', '.flac', '.ogg', '.aac', '.m4a',
+    '.aiff', '.aif', '.wma', '.opus', '.amr', '.mid', '.midi', '.ape', '.wv',
+    '.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv',
+    '.wmv', '.mpeg', '.mpg', '.m4v', '.3gp', '.3g2',
+    '.ts', '.mts', '.m2ts', '.vob', '.ogv', '.rm', '.rmvb',
+    '.ttf', '.otf', '.woff', '.woff2', '.eot', '.fon', '.pfb', '.pfm',
+    '.sqlite', '.sqlite3', '.db', '.mdb', '.accdb', '.dbf',
+    '.parquet', '.feather', '.arrow', '.hdf5', '.h5', '.nc',
+    '.npy', '.npz', '.pkl', '.joblib', '.pt', '.pth', '.onnx',
+    '.pb', '.tflite',
+    '.class', '.pyc', '.pyo', '.pyd', '.o', '.a', '.lib', '.obj',
+    '.iso', '.img', '.dmg', '.vhd', '.vhdx', '.vmdk', '.qcow2',
+    '.stl', '.obj', '.glb', '.gltf', '.fbx', '.blend',
+    '.dae', '.3ds', '.max', '.dwg', '.dxf',
+    '.pfx', '.p12', '.cer', '.crt', '.der', '.key',
+    '.deb', '.rpm', '.snap', '.appimage', '.pkg',
+    '.swf', '.fla', '.wasm', '.wmf', '.emf',
+    '.pdb', '.idb', '.dump', '.core',
+  ];
+
+  if (mimeType) {
+    if (mimeType.startsWith('image/')) return false;
+    if (mimeType.startsWith('video/')) return false;
+    if (mimeType.startsWith('audio/')) return false;
+    if (binaryMimes.some(m => mimeType.startsWith(m))) return false;
+    if (mimeType.startsWith('text/')) return true;
+    if (['application/json', 'application/xml', 'application/javascript',
+         'application/typescript', 'application/x-sh'].includes(mimeType)) return true;
   }
+
+  if (fileName) {
+    const lower = fileName.toLowerCase();
+    if (binaryExts.some(e => lower.endsWith(e))) return false;
+    // 拡張子がないかテキスト系っぽければtrue（Makefile, Dockerfileなど）
+    return true;
+  }
+
   return false;
 };
 
