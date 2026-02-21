@@ -106,9 +106,78 @@ const getTextFromDataUrl = (dataUrl) => {
   } catch { return null; }
 };
 
+// モーダルコンポーネント
+function Modal({ onClose, children }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        style={{ position: 'fixed', top: '12px', left: '12px', zIndex: 60 }}
+        className="bg-black bg-opacity-60 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg hover:bg-opacity-90"
+      >✕</button>
+      <div onClick={e => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// 画像モーダル（ホイールズーム）
+function ImageModal({ src, fileName, onClose }) {
+  const [scale, setScale] = useState(1);
+  const onWheel = (e) => {
+    e.preventDefault();
+    setScale(s => Math.min(10, Math.max(0.2, s - e.deltaY * 0.001)));
+  };
+  return (
+    <Modal onClose={onClose}>
+      <div
+        onWheel={onWheel}
+        style={{ cursor: 'zoom-in', userSelect: 'none' }}
+        className="flex items-center justify-center"
+      >
+        <img
+          src={src}
+          alt={fileName}
+          style={{ transform: `scale(${scale})`, transformOrigin: 'center', maxWidth: '90vw', maxHeight: '90vh', transition: 'transform 0.1s' }}
+        />
+      </div>
+    </Modal>
+  );
+}
+
+// テキストモーダル
+function TextModal({ text, fileName, fileData, onClose }) {
+  return (
+    <Modal onClose={onClose}>
+      <div
+        className="bg-gray-900 rounded-lg overflow-auto font-mono text-xs text-green-300"
+        style={{ maxWidth: '85vw', maxHeight: '85vh', minWidth: '320px', padding: '16px' }}
+      >
+        <div className="text-gray-400 mb-2 text-xs">{fileName}</div>
+        <pre className="whitespace-pre-wrap break-all">{text}</pre>
+        {fileData && (
+          <a href={fileData} download={fileName} className="block mt-4 text-blue-400 underline text-xs">{fileName} をダウンロード</a>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 // ファイルプレビューコンポーネント
 function FilePreview({ msg }) {
   const [expanded, setExpanded] = useState(false);
+  const [imageModal, setImageModal] = useState(false);
+  const [textModal, setTextModal] = useState(false);
   const isImage = msg.mimeType && msg.mimeType.startsWith('image/');
   const isText = isTextFile(msg.mimeType, msg.fileName);
   const PREVIEW_LINES = 3;
@@ -116,12 +185,21 @@ function FilePreview({ msg }) {
 
   if (isImage) {
     return (
-      <div className="flex flex-col gap-2">
-        <img src={msg.fileData} alt={msg.fileName} className="max-w-xs sm:max-w-sm rounded" style={{ maxHeight: '300px', objectFit: 'contain' }} />
-        {msg.fileData && (
-          <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline">{msg.fileName}</a>
-        )}
-      </div>
+      <>
+        {imageModal && <ImageModal src={msg.fileData} fileName={msg.fileName} onClose={() => setImageModal(false)} />}
+        <div className="flex flex-col gap-2">
+          <img
+            src={msg.fileData}
+            alt={msg.fileName}
+            className="max-w-xs sm:max-w-sm rounded cursor-pointer hover:opacity-90"
+            style={{ maxHeight: '300px', objectFit: 'contain' }}
+            onClick={() => setImageModal(true)}
+          />
+          {msg.fileData && (
+            <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline">{msg.fileName}</a>
+          )}
+        </div>
+      </>
     );
   }
 
@@ -136,35 +214,63 @@ function FilePreview({ msg }) {
     const hasMore = expanded && remaining > 0;
 
     return (
-      <div className="flex flex-col gap-1">
-        <div className="text-xs font-semibold opacity-70 mb-1">{msg.fileName} ({(msg.text.match(/\((.*?)\)/)?.[1] || '')})</div>
-        <div className="bg-gray-900 text-green-300 rounded p-2 font-mono text-xs whitespace-pre-wrap break-all" style={{ maxWidth: '320px' }}>
-          {showLines.join('\n')}
-          {hasMore && <div className="text-gray-500 mt-1">{'────────'} 残り {remaining} 行 {'────────'}</div>}
-        </div>
-        {canExpand && (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            className="text-xs opacity-60 hover:opacity-100 text-left mt-1 flex items-center gap-1"
+      <>
+        {textModal && <TextModal text={fullText} fileName={msg.fileName} fileData={msg.fileData} onClose={() => setTextModal(false)} />}
+        <div className="flex flex-col gap-1">
+          <div className="text-xs font-semibold opacity-70 mb-1">{msg.fileName} ({(msg.text.match(/\((.*?)\)/)?.[1] || '')})</div>
+          <div
+            className="bg-gray-900 text-green-300 rounded p-2 font-mono text-xs whitespace-pre-wrap break-all cursor-pointer hover:bg-gray-800"
+            style={{ maxWidth: '320px' }}
+            onClick={() => setTextModal(true)}
           >
-            <span>{expanded ? '▲ 折りたたむ' : '▼ もっと見る'}</span>
-          </button>
-        )}
-        {msg.fileData && (
-          <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline mt-1">{msg.fileName} をダウンロード</a>
-        )}
+            {showLines.join('\n')}
+            {hasMore && <div className="text-gray-500 mt-1">{'────────'} 残り {remaining} 行 {'────────'}</div>}
+          </div>
+          {canExpand && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="text-xs opacity-60 hover:opacity-100 text-left mt-1 flex items-center gap-1"
+            >
+              <span>{expanded ? '▲ 折りたたむ' : '▼ もっと見る'}</span>
+            </button>
+          )}
+          {msg.fileData && (
+            <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline mt-1">{msg.fileName} をダウンロード</a>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  const isAudio = msg.mimeType && msg.mimeType.startsWith('audio/');
+  const isVideo = msg.mimeType && msg.mimeType.startsWith('video/');
+
+  if (isAudio && msg.fileData) {
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="text-xs opacity-70 mb-1">{msg.fileName}</div>
+        <audio controls src={msg.fileData} style={{ maxWidth: '280px' }} />
+        <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline mt-1">{msg.fileName} をダウンロード</a>
       </div>
     );
   }
 
-  // バイナリ等はダウンロードリンクのみ
+  if (isVideo && msg.fileData) {
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="text-xs opacity-70 mb-1">{msg.fileName}</div>
+        <video controls src={msg.fileData} style={{ maxWidth: '300px', maxHeight: '220px', borderRadius: '6px' }} />
+        <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline mt-1">{msg.fileName} をダウンロード</a>
+      </div>
+    );
+  }
+
   return msg.fileData ? (
     <a href={msg.fileData} download={msg.fileName} className="block p-2 bg-white rounded hover:bg-gray-100 text-blue-600 underline break-words">{msg.text}</a>
   ) : (
     <div className="break-words">{msg.text}</div>
   );
 }
-
 
 
 // translations will be loaded from translations.json at runtime
@@ -312,14 +418,14 @@ function App() {
         mimeType: selectedFile.type,
         ...encrypted,
       });
-      const dataUrl = `data:${selectedFile.type};base64,${base64Data}`;
+      const objectUrl = URL.createObjectURL(selectedFile);
       setMessages(prev => [...prev, {
         sender: 'local',
         text: `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(2)} KB)`,
         timestamp: formatTimestamp(),
         isFile: true,
         fileName: selectedFile.name,
-        fileData: dataUrl,
+        fileData: objectUrl,
         mimeType: selectedFile.type,
       }]);
       setSelectedFile(null);
@@ -335,15 +441,15 @@ function App() {
     try {
       const decrypted = await decryptFileLocal(data);
       if (!decrypted) return;
-      const base64String = arrayBufferToBase64(decrypted);
-      const dataUrl = `data:${data.mimeType};base64,${base64String}`;
+      const blob = new Blob([decrypted], { type: data.mimeType });
+      const objectUrl = URL.createObjectURL(blob);
       setMessages(prev => [...prev, {
         sender: 'remote',
         text: `${data.fileName} (${(data.fileSize / 1024).toFixed(2)} KB)`,
         timestamp: formatTimestamp(),
         isFile: true,
         fileName: data.fileName,
-        fileData: dataUrl,
+        fileData: objectUrl,
         mimeType: data.mimeType,
       }]);
       showNotification('fileReceived');
