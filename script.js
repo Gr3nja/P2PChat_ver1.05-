@@ -1,5 +1,84 @@
 const { useState, useEffect, useRef } = React;
 
+// テキスト系MIMEタイプかどうか判定
+const isTextFile = (mimeType, fileName) => {
+  if (!mimeType && !fileName) return false;
+  const textMimes = ['text/', 'application/json', 'application/xml', 'application/javascript', 'application/typescript'];
+  if (mimeType && textMimes.some(m => mimeType.startsWith(m))) return true;
+  const textExts = ['.txt', '.json', '.csv', '.md', '.js', '.ts', '.html', '.css', '.xml', '.log', '.yaml', '.yml'];
+  if (fileName && textExts.some(e => fileName.toLowerCase().endsWith(e))) return true;
+  return false;
+};
+
+// DataURLからテキストを取得
+const getTextFromDataUrl = (dataUrl) => {
+  try {
+    const base64 = dataUrl.split(',')[1];
+    return atob(base64);
+  } catch { return null; }
+};
+
+// ファイルプレビューコンポーネント
+function FilePreview({ msg }) {
+  const [expanded, setExpanded] = useState(false);
+  const isImage = msg.mimeType && msg.mimeType.startsWith('image/');
+  const isText = isTextFile(msg.mimeType, msg.fileName);
+  const PREVIEW_LINES = 3;
+  const EXPAND_LINES = 10;
+
+  if (isImage) {
+    return (
+      <div className="flex flex-col gap-2">
+        <img src={msg.fileData} alt={msg.fileName} className="max-w-xs sm:max-w-sm rounded" style={{ maxHeight: '300px', objectFit: 'contain' }} />
+        {msg.fileData && (
+          <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline">{msg.fileName}</a>
+        )}
+      </div>
+    );
+  }
+
+  if (isText && msg.fileData) {
+    const fullText = getTextFromDataUrl(msg.fileData) || '';
+    const lines = fullText.split('\n');
+    const previewLines = lines.slice(0, PREVIEW_LINES);
+    const expandLines = lines.slice(0, EXPAND_LINES);
+    const remaining = lines.length - EXPAND_LINES;
+    const showLines = expanded ? expandLines : previewLines;
+    const canExpand = lines.length > PREVIEW_LINES;
+    const hasMore = expanded && remaining > 0;
+
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="text-xs font-semibold opacity-70 mb-1">{msg.fileName} ({(msg.text.match(/\((.*?)\)/)?.[1] || '')})</div>
+        <div className="bg-gray-900 text-green-300 rounded p-2 font-mono text-xs whitespace-pre-wrap break-all" style={{ maxWidth: '320px' }}>
+          {showLines.join('\n')}
+          {hasMore && <div className="text-gray-500 mt-1">{'────────'} 残り {remaining} 行 {'────────'}</div>}
+        </div>
+        {canExpand && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-xs opacity-60 hover:opacity-100 text-left mt-1 flex items-center gap-1"
+          >
+            <span>{expanded ? '▲ 折りたたむ' : '▼ もっと見る'}</span>
+          </button>
+        )}
+        {msg.fileData && (
+          <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline mt-1">{msg.fileName} をダウンロード</a>
+        )}
+      </div>
+    );
+  }
+
+  // バイナリ等はダウンロードリンクのみ
+  return msg.fileData ? (
+    <a href={msg.fileData} download={msg.fileName} className="block p-2 bg-white rounded hover:bg-gray-100 text-blue-600 underline break-words">{msg.text}</a>
+  ) : (
+    <div className="break-words">{msg.text}</div>
+  );
+}
+
+
+
 // translations will be loaded from translations.json at runtime
 let translations = {};
 
@@ -560,18 +639,7 @@ function App() {
                       </div>
                     )}
                     {msg.isFile ? (
-                      msg.mimeType && msg.mimeType.startsWith('image/') ? (
-                        <div className="flex flex-col gap-2">
-                          <img src={msg.fileData} alt={msg.fileName} className="max-w-xs sm:max-w-sm rounded" style={{ maxHeight: '300px', objectFit: 'contain' }} />
-                          {msg.fileData && (
-                            <a href={msg.fileData} download={msg.fileName} className="text-xs text-blue-300 hover:text-blue-100 underline">{msg.fileName}</a>
-                          )}
-                        </div>
-                      ) : msg.fileData ? (
-                        <a href={msg.fileData} download={msg.fileName} className="block p-2 bg-white rounded hover:bg-gray-100 text-blue-600 underline break-words">{msg.text}</a>
-                      ) : (
-                        <div className="break-words">{msg.text}</div>
-                      )
+                      <FilePreview msg={msg} />
                     ) : (
                       <div className="break-words">{msg.text}</div>
                     )}
