@@ -145,12 +145,15 @@ function App() {
         mimeType: selectedFile.type,
         ...encrypted,
       });
+      const dataUrl = `data:${selectedFile.type};base64,${base64Data}`;
       setMessages(prev => [...prev, {
         sender: 'local',
         text: `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(2)} KB)`,
         timestamp: formatTimestamp(),
         isFile: true,
         fileName: selectedFile.name,
+        fileData: dataUrl,
+        mimeType: selectedFile.type,
       }]);
       setSelectedFile(null);
       showNotification('fileSent');
