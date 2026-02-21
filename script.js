@@ -295,11 +295,12 @@ function App() {
             showNotification('connectionEstablished');
 
             conn.on('data', handleData);
-            conn.on('close', () => {
+            conn.on('close', async () => {
               setConnectionStatus('disconnected');
               setMessages(prev => [...prev, { sender: 'system', text: t('connectionClosed'), timestamp: formatTimestamp() }]);
               connRef.current = null;
               cryptoKey.current = null;
+              myKeyPair.current = await generateX25519KeyPair();
               showNotification('connectionClosed');
             });
           });
@@ -342,15 +343,15 @@ function App() {
       const myPubKeyBase64 = await exportPublicKey(myKeyPair.current);
       conn.send({ type: 'pubkey', key: myPubKeyBase64, needsReply: true });
 
-      setMessages(prev => [...prev, { sender: 'system', text: t('keySent'), timestamp: formatTimestamp() }]);
       showNotification('connectionEstablished');
 
       conn.on('data', handleData);
-      conn.on('close', () => {
+      conn.on('close', async () => {
         setConnectionStatus('disconnected');
         setMessages(prev => [...prev, { sender: 'system', text: t('connectionClosed'), timestamp: formatTimestamp() }]);
         connRef.current = null;
         cryptoKey.current = null;
+        myKeyPair.current = await generateX25519KeyPair();
         showNotification('connectionClosed');
       });
     });
@@ -387,11 +388,12 @@ function App() {
   const handleKeyPress = (e) => { if (e.key === 'Enter') sendMessage(); };
   const handleMessageChange = (e) => { setMessage(e.target.value); handleTyping(); };
   const copyPeerId = () => { navigator.clipboard.writeText(peerId); showNotification('copyPeerId'); };
-  const disconnect = () => {
+  const disconnect = async () => {
     if (connRef.current) {
       connRef.current.close();
       connRef.current = null;
       cryptoKey.current = null;
+      myKeyPair.current = await generateX25519KeyPair();
       setConnectionStatus('disconnected');
       showNotification('connectionClosed');
     }
