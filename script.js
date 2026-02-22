@@ -220,12 +220,15 @@ function App() {
         mimeType: selectedFile.type,
         ...encrypted,
       });
+      const objectUrl = URL.createObjectURL(selectedFile);
       setMessages(prev => [...prev, {
         sender: 'local',
         text: `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(2)} KB)`,
         timestamp: formatTimestamp(),
         isFile: true,
         fileName: selectedFile.name,
+        fileData: objectUrl,
+        mimeType: selectedFile.type,
       }]);
       setSelectedFile(null);
       showNotification('fileSent');
