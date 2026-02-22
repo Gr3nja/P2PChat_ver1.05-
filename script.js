@@ -921,7 +921,138 @@ function App() {
   );
 }
 
+// DataURLからテキストを取得
+const getTextFromDataUrl = (dataUrl) => {
+  try {
+    const base64 = dataUrl.split(',')[1];
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch { return null; }
+};
+
+// モーダル
+function Modal({ onClose, children }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80" onClick={onClose}>
+      <button onClick={onClose} style={{ position: 'fixed', top: '12px', left: '12px', zIndex: 60 }}
+        className="bg-black bg-opacity-60 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg hover:bg-opacity-90">✕</button>
+      <div onClick={e => e.stopPropagation()}>{children}</div>
+    </div>
+  );
+}
+
+// 画像モーダル（ホイールズーム）
+function ImageModal({ src, fileName, onClose }) {
+  const [scale, setScale] = useState(1);
+  const onWheel = (e) => {
+    e.preventDefault();
+    setScale(s => Math.min(10, Math.max(0.2, s - e.deltaY * 0.001)));
+  };
+  return (
+    <Modal onClose={onClose}>
+      <div onWheel={onWheel} style={{ cursor: 'zoom-in', userSelect: 'none' }} className="flex items-center justify-center">
+        <img src={src} alt={fileName}
+          style={{ transform: `scale(${scale})`, transformOrigin: 'center', maxWidth: '90vw', maxHeight: '90vh', transition: 'transform 0.1s' }} />
+      </div>
+    </Modal>
+  );
+}
+
+// テキストモーダル
+function TextModal({ text, fileName, fileData, onClose }) {
+  return (
+    <Modal onClose={onClose}>
+      <div className="bg-gray-900 rounded-lg overflow-auto font-mono text-xs text-green-300"
+        style={{ maxWidth: '85vw', maxHeight: '85vh', minWidth: '320px', padding: '16px' }}>
+        <div className="text-gray-400 mb-2 text-xs">{fileName}</div>
+        <pre className="whitespace-pre-wrap break-all">{text}</pre>
+        {fileData && (
+          <a href={fileData} download={fileName} className="block mt-4 text-blue-400 underline text-xs">{fileName} をダウンロード</a>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function FilePreview({ msg }) {
+  const [expanded, setExpanded] = useState(false);
+  const [imageModal, setImageModal] = useState(false);
+  const [textModal, setTextModal] = useState(false);
+  const isImage = msg.mimeType && msg.mimeType.startsWith('image/');
+  const isText = isTextFile(msg.mimeType, msg.fileName);
+  const isAudio = msg.mimeType && msg.mimeType.startsWith('audio/');
+  const isVideo = msg.mimeType && msg.mimeType.startsWith('video/');
+  const PREVIEW_LINES = 3;
+  const EXPAND_LINES = 10;
+
+  if (isImage && msg.fileData) {
+    return (
+      <>
+        {imageModal && <ImageModal src={msg.fileData} fileName={msg.fileName} onClose={() => setImageModal(false)} />}
+        <div className="flex flex-col gap-2">
+          <img src={msg.fileData} alt={msg.fileName}
+            className="max-w-xs sm:max-w-sm rounded cursor-pointer hover:opacity-90"
+            style={{ maxHeight: '300px', objectFit: 'contain' }}
+            onClick={() => setImageModal(true)} />
+          <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline">{msg.fileName}</a>
+        </div>
+      </>
+    );
+  }
+
+  if (isAudio && msg.fileData) {
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="text-xs opacity-70 mb-1">{msg.fileName}</div>
+        <audio controls src={msg.fileData} style={{ maxWidth: '280px', borderRadius: '4px' }} />
+        <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline mt-1">{msg.fileName} をダウンロード</a>
+      </div>
+    );
+  }
+
+  if (isVideo && msg.fileData) {
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="text-xs opacity-70 mb-1">{msg.fileName}</div>
+        <video controls src={msg.fileData} style={{ maxWidth: '300px', maxHeight: '220px', borderRadius: '4px', display: 'block' }} />
+        <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline mt-1">{msg.fileName} をダウンロード</a>
+      </div>
+    );
+  }
+
+  if (isText && msg.fileData) {
+    const fullText = getTextFromDataUrl(msg.fileData) || '';
+    const lines = fullText.split('\n');
+    const showLines = expanded ? lines.slice(0, EXPAND_LINES) : lines.slice(0, PREVIEW_LINES);
+    const canExpand = lines.length > PREVIEW_LINES;
+    const remaining = lines.length - EXPAND_LINES;
+    const hasMore = expanded && remaining > 0;
+    return (
+      <>
+        {textModal && <TextModal text={fullText} fileName={msg.fileName} fileData={msg.fileData} onClose={() => setTextModal(false)} />}
+        <div className="flex flex-col gap-1">
+          <div className="text-xs font-semibold opacity-70 mb-1">{msg.fileName}</div>
+          <div className="bg-gray-900 text-green-300 rounded p-2 font-mono text-xs whitespace-pre-wrap break-all cursor-pointer hover:bg-gray-800"
+            style={{ maxWidth: '320px' }} onClick={() => setTextModal(true)}>
+            {showLines.join('\n')}
+            {hasMore && <div className="text-gray-500 mt-1">────────残り {remaining} 行────────</div>}
+          </div>
+          {canExpand && (
+            <button onClick={() => setExpanded(e => !e)} className="text-xs opacity-60 hover:opacity-100 text-left mt-1">
+              {expanded ? '▲ 折りたたむ' : '▼ もっと見る'}
+            </button>
+          )}
+          <a href={msg.fileData} download={msg.fileName} className="text-xs opacity-60 hover:opacity-100 underline mt-1">{msg.fileName} をダウンロード</a>
+        </div>
+      </>
+    );
+  }
+
   return msg.fileData ? (
     <a href={msg.fileData} download={msg.fileName} className="block p-2 bg-white rounded hover:bg-gray-100 text-blue-600 underline break-words">{msg.text}</a>
   ) : (
