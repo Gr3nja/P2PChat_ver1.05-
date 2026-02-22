@@ -970,7 +970,7 @@ function TextModal({ text, fileName, fileData, onClose }) {
       <div className="bg-gray-900 rounded-lg overflow-auto font-mono text-xs text-green-300"
         style={{ maxWidth: '85vw', maxHeight: '85vh', minWidth: '320px', padding: '16px' }}>
         <div className="text-gray-400 mb-2 text-xs">{fileName}</div>
-        <pre className="whitespace-pre-wrap break-all">{text}</pre>
+        <pre className="whitespace-pre-wrap break-all" style={{ textAlign: 'left', direction: 'ltr' }}>{text}</pre>
         {fileData && (
           <a href={fileData} download={fileName} className="block mt-4 text-blue-400 underline text-xs">{fileName} をダウンロード</a>
         )}
@@ -1038,7 +1038,7 @@ function FilePreview({ msg }) {
         <div className="flex flex-col gap-1">
           <div className="text-xs font-semibold opacity-70 mb-1">{msg.fileName}</div>
           <div className="bg-gray-900 text-green-300 rounded p-2 font-mono text-xs whitespace-pre-wrap break-all cursor-pointer hover:bg-gray-800"
-            style={{ maxWidth: '320px' }} onClick={() => setTextModal(true)}>
+            style={{ maxWidth: '320px', textAlign: 'left', direction: 'ltr' }} onClick={() => setTextModal(true)}>
             {showLines.join('\n')}
             {hasMore && <div className="text-gray-500 mt-1">────────残り {remaining} 行────────</div>}
           </div>
