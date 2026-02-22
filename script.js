@@ -220,14 +220,15 @@ function App() {
         mimeType: selectedFile.type,
         ...encrypted,
       });
-      const objectUrl = URL.createObjectURL(selectedFile);
+      // 送信側はDataURLで保持（テキストプレビューのため）
+      const dataUrl = `data:${selectedFile.type || 'application/octet-stream'};base64,${base64Data}`;
       setMessages(prev => [...prev, {
         sender: 'local',
         text: `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(2)} KB)`,
         timestamp: formatTimestamp(),
         isFile: true,
         fileName: selectedFile.name,
-        fileData: objectUrl,
+        fileData: dataUrl,
         mimeType: selectedFile.type,
       }]);
       setSelectedFile(null);
